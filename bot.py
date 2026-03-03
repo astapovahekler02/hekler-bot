@@ -63,7 +63,7 @@ TEXTS = {
         "/chatid - ID текущего чата\n\n"
         "Если анкета не завершена, через 15 минут менеджер получит черновик."
     ),
-    "vacancies": [["Сварщик"], ["Арматурщик"]],
+    "vacancies": [["Сварщик"], ["Арматурщик"], ["Бетонщик"]],
 }
 
 
@@ -97,7 +97,7 @@ async def vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return VACANCY
 
-    allowed_vacancies = {"Сварщик", "Арматурщик"}
+    allowed_vacancies = {"Сварщик", "Арматурщик", "Бетонщик"}
     context.user_data["vacancy"] = selected if selected in allowed_vacancies else "Сварщик"
 
     await update.message.reply_text(
