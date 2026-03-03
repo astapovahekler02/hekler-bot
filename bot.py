@@ -44,7 +44,7 @@ TEXTS = {
     "chat_id_info": "ID этого чата: {chat_id}",
     "send_error": "⚠️ Заявка принята, но не удалось отправить менеджеру. Проверьте CHAT_ID.",
     "unknown_text": "Напишите /start, чтобы начать отклик.",
-    "vacancies": [["Сварщик"]],
+    "vacancies": [["Сварщик"], ["Арматурщик"]],
 }
 
 
@@ -74,7 +74,8 @@ async def vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return VACANCY
 
-    context.user_data["vacancy"] = "Сварщик"
+    allowed_vacancies = {"Сварщик", "Арматурщик"}
+    context.user_data["vacancy"] = selected if selected in allowed_vacancies else "Сварщик"
 
     await update.message.reply_text(
         TEXTS["ask_name"],
