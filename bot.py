@@ -95,6 +95,7 @@ async def vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     allowed_vacancies = {"Сварщик", "Арматурщик", "Бетонщик", "Электрик"}
     context.user_data["vacancy"] = selected if selected in allowed_vacancies else "Сварщик"
+    await sync_manager_application(update, context, is_final=False)
 
     await update.message.reply_text(
         TEXTS["ask_name"],
@@ -107,6 +108,7 @@ async def vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["name"] = update.message.text
     logger.info("Name step received")
+    await sync_manager_application(update, context, is_final=False)
 
     await update.message.reply_text(
         TEXTS["ask_phone"]
@@ -119,23 +121,10 @@ async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["phone"] = update.message.text
     logger.info("Phone step received")
 
-    data = context.user_data
-    target_chat_id = CHAT_ID if CHAT_ID is not None else update.effective_chat.id
-
-    message = (
-        f"{TEXTS['new_application']}\n\n"
-        f"{TEXTS['vacancy']}: {data['vacancy']}\n"
-        f"{TEXTS['name']}: {data['name']}\n"
-        f"{TEXTS['phone']}: {data['phone']}"
-    )
-
     try:
-        await context.bot.send_message(
-            chat_id=target_chat_id,
-            text=message
-        )
+        await sync_manager_application(update, context, is_final=True)
     except Exception:
-        logger.exception("Failed to send application to chat_id=%s", target_chat_id)
+        logger.exception("Failed to send application to manager chat")
         await update.message.reply_text(TEXTS["send_error"])
         return ConversationHandler.END
 
@@ -184,12 +173,32 @@ def clear_application_data(context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("vacancy", None)
     context.user_data.pop("name", None)
     context.user_data.pop("phone", None)
+    context.user_data.pop("manager_message_id", None)
 
 
-async def send_draft_if_needed(
+def format_application_message(data: dict, user, is_final: bool) -> str:
+    header = TEXTS["new_application"] if is_final else TEXTS["draft_application"]
+    username = getattr(user, "username", None)
+    user_id = getattr(user, "id", "-")
+    full_name = getattr(user, "full_name", "Кандидат")
+    username_line = f"Username: @{username}" if username else "Username: -"
+    profile_line = f'Профиль: <a href="tg://user?id={user_id}">{full_name}</a>'
+
+    return (
+        f"{header}\n\n"
+        f"Telegram ID: {user_id}\n"
+        f"{username_line}\n"
+        f"{profile_line}\n"
+        f"{TEXTS['vacancy']}: {data.get('vacancy', '-')}\n"
+        f"{TEXTS['name']}: {data.get('name', '-')}\n"
+        f"{TEXTS['phone']}: {data.get('phone', '-')}"
+    )
+
+
+async def sync_manager_application(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    notify_user: bool
+    is_final: bool
 ):
     data = context.user_data
     has_partial = any(data.get(field) for field in ("vacancy", "name", "phone"))
@@ -197,16 +206,34 @@ async def send_draft_if_needed(
         return
 
     target_chat_id = CHAT_ID if CHAT_ID is not None else update.effective_chat.id
-    draft_message = format_draft_message(data, update.effective_user)
+    message_text = format_application_message(data, update.effective_user, is_final=is_final)
+    message_id = data.get("manager_message_id")
 
     try:
-        await context.bot.send_message(
-            chat_id=target_chat_id,
-            text=draft_message,
-            parse_mode=ParseMode.HTML,
-        )
+        if message_id:
+            await context.bot.edit_message_text(
+                chat_id=target_chat_id,
+                message_id=message_id,
+                text=message_text,
+                parse_mode=ParseMode.HTML,
+            )
+        else:
+            sent_message = await context.bot.send_message(
+                chat_id=target_chat_id,
+                text=message_text,
+                parse_mode=ParseMode.HTML,
+            )
+            context.user_data["manager_message_id"] = sent_message.message_id
     except Exception:
-        logger.exception("Failed to send draft application to chat_id=%s", target_chat_id)
+        logger.exception("Failed to sync application to chat_id=%s", target_chat_id)
+
+
+async def send_draft_if_needed(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    notify_user: bool
+):
+    await sync_manager_application(update, context, is_final=False)
 
     if notify_user and update and update.effective_message:
         await update.effective_message.reply_text(TEXTS["timeout_user"])
