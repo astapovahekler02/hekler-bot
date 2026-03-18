@@ -1,4 +1,5 @@
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, BotCommand
+from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     ConversationHandler, ContextTypes, filters
@@ -64,9 +65,8 @@ TEXTS = {
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.pop("vacancy", None)
-    context.user_data.pop("name", None)
-    context.user_data.pop("phone", None)
+    await send_draft_if_needed(update, context, notify_user=False)
+    clear_application_data(context)
 
     await update.message.reply_text(
         TEXTS["welcome"]
@@ -143,9 +143,7 @@ async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         TEXTS["thanks"]
     )
 
-    context.user_data.pop("vacancy", None)
-    context.user_data.pop("name", None)
-    context.user_data.pop("phone", None)
+    clear_application_data(context)
 
     return ConversationHandler.END
 
@@ -165,36 +163,59 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def format_draft_message(data: dict, user) -> str:
+    username = getattr(user, "username", None)
+    user_id = getattr(user, "id", "-")
+    full_name = getattr(user, "full_name", "Кандидат")
+    username_line = f"Username: @{username}" if username else "Username: -"
+    profile_line = f'Профиль: <a href="tg://user?id={user_id}">{full_name}</a>'
+
     return (
         f"{TEXTS['draft_application']}\n\n"
-        f"Telegram ID: {getattr(user, 'id', '-')}\n"
-        f"Username: @{getattr(user, 'username', '-') or '-'}\n"
+        f"Telegram ID: {user_id}\n"
+        f"{username_line}\n"
+        f"{profile_line}\n"
         f"{TEXTS['vacancy']}: {data.get('vacancy', '-')}\n"
         f"{TEXTS['name']}: {data.get('name', '-')}\n"
         f"{TEXTS['phone']}: {data.get('phone', '-')}"
     )
 
 
-async def on_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def clear_application_data(context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop("vacancy", None)
+    context.user_data.pop("name", None)
+    context.user_data.pop("phone", None)
+
+
+async def send_draft_if_needed(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    notify_user: bool
+):
     data = context.user_data
     has_partial = any(data.get(field) for field in ("vacancy", "name", "phone"))
     if not has_partial:
-        return ConversationHandler.END
+        return
 
     target_chat_id = CHAT_ID if CHAT_ID is not None else update.effective_chat.id
     draft_message = format_draft_message(data, update.effective_user)
 
     try:
-        await context.bot.send_message(chat_id=target_chat_id, text=draft_message)
+        await context.bot.send_message(
+            chat_id=target_chat_id,
+            text=draft_message,
+            parse_mode=ParseMode.HTML,
+        )
     except Exception:
         logger.exception("Failed to send draft application to chat_id=%s", target_chat_id)
 
-    if update and update.effective_message:
+    if notify_user and update and update.effective_message:
         await update.effective_message.reply_text(TEXTS["timeout_user"])
 
-    context.user_data.pop("vacancy", None)
-    context.user_data.pop("name", None)
-    context.user_data.pop("phone", None)
+    clear_application_data(context)
+
+
+async def on_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_draft_if_needed(update, context, notify_user=True)
     return ConversationHandler.END
 
 
