@@ -67,6 +67,7 @@ TEXTS = {
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_draft_if_needed(update, context, notify_user=False)
     clear_application_data(context)
+    context.user_data["started_application"] = True
 
     await update.message.reply_text(
         TEXTS["welcome"]
@@ -76,6 +77,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         TEXTS["pick_vacancy"],
         reply_markup=ReplyKeyboardMarkup(TEXTS["vacancies"], resize_keyboard=True)
     )
+    await sync_manager_application(update, context, is_final=False)
 
     return VACANCY
 
@@ -170,6 +172,7 @@ def format_draft_message(data: dict, user) -> str:
 
 
 def clear_application_data(context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop("started_application", None)
     context.user_data.pop("vacancy", None)
     context.user_data.pop("name", None)
     context.user_data.pop("phone", None)
@@ -202,7 +205,8 @@ async def sync_manager_application(
 ):
     data = context.user_data
     has_partial = any(data.get(field) for field in ("vacancy", "name", "phone"))
-    if not has_partial:
+    has_started = bool(data.get("started_application"))
+    if not has_partial and not has_started:
         return
 
     target_chat_id = CHAT_ID if CHAT_ID is not None else update.effective_chat.id
